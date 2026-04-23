@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0d1117">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="description" content="Dezba Port Operations — Truck Entry Log with offline support">
+  <title>Dezba — Port Entry Log</title>
+  <link rel="icon" href="/imgs/dezba_logo_PNG.png">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <header class="header">
+    <div class="header-inner">
+      <div class="brand">
+        <img src="/imgs/dezba_logo_PNG.png" alt="Dezba" class="logo">
+        <div class="brand-text">
+          <span class="brand-name">Dezba</span>
+          <span class="brand-sub">Port Operations</span>
+        </div>
+      </div>
+      <div class="header-right">
+
+        <div class="pending-wrap" id="pendingWrap" style="display:none">
+          <div class="pending-pill">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span id="pendingBadge">0</span>&nbsp;pending
+          </div>
+        </div>
+
+        <div class="connectivity">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusLabel">—</span>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="container">
+
+      <div class="page-intro">
+        <h1>Truck Entry Log</h1>
+        <p>Register incoming trucks at the port gate. Works offline — entries queue in your device and upload automatically when signal is restored.</p>
+      </div>
+
+      <div class="card">
+        <form id="uploadForm" novalidate>
+
+          <div class="field">
+            <label for="nameInput" class="label">
+              Truck / License Plate <span class="required">*</span>
+            </label>
+            <input
+              type="text"
+              id="nameInput"
+              class="input"
+              placeholder="e.g. ABC-1234"
+              autocomplete="off"
+              autocorrect="off"
+              spellcheck="false"
+              required
+            >
+          </div>
+
+          <div class="field">
+            <label for="descInput" class="label">Notes</label>
+            <textarea
+              id="descInput"
+              class="input textarea"
+              placeholder="Container number, cargo type, driver name, destination pier…"
+              rows="3"
+            ></textarea>
+          </div>
+
+          <div class="field">
+            <label class="label">Photo</label>
+            <div class="file-drop" id="fileDrop">
+              <input
+                type="file"
+                id="imgInput"
+                class="file-input"
+                accept="image/*"
+                capture="environment"
+              >
+              <div class="file-drop-content">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <polyline points="21 15 16 10 5 21"/>
+                </svg>
+                <span class="file-drop-text">Tap to take photo or choose file</span>
+                <span class="file-drop-hint">JPEG · PNG · HEIC</span>
+              </div>
+            </div>
+            <div id="previewContainer" class="preview-container" style="display:none">
+              <img id="imgPreview" class="img-preview" alt="Photo preview">
+              <button type="button" class="btn-remove" onclick="removeImage()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                Remove
+              </button>
+            </div>
+          </div>
+
+          <button type="submit" id="submitBtn" class="btn-primary">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span id="submitBtnText">Submit Entry</span>
+          </button>
+
+        </form>
+      </div>
+
+      <div id="offlineBanner" class="offline-banner" style="display:none">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+        Offline mode — entries are saved to your device and will upload when you reconnect
+      </div>
+
+      <section id="uploadsSection" class="uploads-section" style="display:none">
+        <h2 class="section-title">Recent Entries</h2>
+        <div id="recentUploads" class="uploads-grid"></div>
+      </section>
+
+    </div>
+  </main>
+
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="/config.js"></script>
+  <script src="/scripts/db.js"></script>
+  <script src="/scripts/app.js"></script>
+
+</body>
+</html>
