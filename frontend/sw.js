@@ -3,7 +3,7 @@
 
 importScripts('/config.js'); // provides DEZBA_API_URL global
 
-const CACHE    = 'dezba-v1';
+const CACHE    = 'dezba-v2';
 const SYNC_TAG = 'sync-uploads';
 
 const SHELL = [
@@ -67,8 +67,10 @@ async function syncPendingUploads() {
   const pending = await getAllPending(db);
 
   for (const item of pending) {
+    // Prefer the URL stored in the record — immune to importScripts caching
+    const url = item.apiUrl || DEZBA_API_URL;
     try {
-      const res = await fetch(`${DEZBA_API_URL}/api/upload`, {
+      const res = await fetch(`${url}/api/upload`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({

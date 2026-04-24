@@ -32,7 +32,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   window.addEventListener('offline', () => {
     updateConnectionStatus();
-    showToast('No connection — entries will be saved and synced later.', 'warning');
+    const msg = hasBgSync()
+      ? 'No connection — entry saved. Will upload automatically in the background.'
+      : 'No connection — entry saved. Will upload next time you open this page.';
+    showToast(msg, 'warning');
+  });
+
+  // Sync when user switches back to this tab (critical on mobile)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && navigator.onLine) triggerSync();
   });
 
   // Close modal on Escape key
@@ -64,7 +72,8 @@ async function handleSubmit(e) {
       img_type   = r.type;
     }
 
-    const payload = { name, description, img_base64, img_type };
+    // apiUrl stored in record so the service worker never depends on a cached config
+    const payload = { name, description, img_base64, img_type, apiUrl: DEZBA_API_URL };
 
     if (navigator.onLine) {
       const ok = await tryDirectUpload(payload);
@@ -75,7 +84,10 @@ async function handleSubmit(e) {
     await savePending(payload);
     await updatePendingCount();
     await triggerSync();
-    showToast('Entry saved offline — will sync automatically when connected.', 'warning');
+    const msg = hasBgSync()
+      ? 'Saved offline — will upload automatically when signal is restored.'
+      : 'Saved offline — will upload next time you open this page with a connection.';
+    showToast(msg, 'warning');
     resetForm();
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
@@ -125,12 +137,14 @@ async function triggerSync() {
 async function syncFromMainThread() {
   const pending = await getAllPending();
   for (const item of pending) {
+    // Use the URL stored with the record — never stale
+    const url = item.apiUrl || DEZBA_API_URL;
     try {
-      const res = await fetch(`${DEZBA_API_URL}/api/upload`, {
+      const res = await fetch(`${url}/api/upload`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          name:       item.name,
+          name:        item.name,
           description: item.description,
           img_base64:  item.img_base64,
           img_type:    item.img_type
@@ -248,14 +262,25 @@ async function updatePendingCount() {
 }
 
 function updateConnectionStatus() {
-  const dot   = document.getElementById('statusDot');
-  const label = document.getElementById('statusLabel');
+  const dot    = document.getElementById('statusDot');
+  const label  = document.getElementById('statusLabel');
   const banner = document.getElementById('offlineBanner');
+  const msg    = document.getElementById('offlineBannerMsg');
   const online = navigator.onLine;
 
-  dot.className      = 'status-dot ' + (online ? 'online' : 'offline');
-  label.textContent  = online ? 'Online' : 'Offline';
+  dot.className       = 'status-dot ' + (online ? 'online' : 'offline');
+  label.textContent   = online ? 'Online' : 'Offline';
   banner.style.display = online ? 'none' : 'flex';
+
+  if (!online && msg) {
+    msg.textContent = hasBgSync()
+      ? 'Offline mode — entries are saved to your device and will upload automatically in the background'
+      : 'Offline mode — entries are saved to your device and will upload next time you open this page';
+  }
+}
+
+function hasBgSync() {
+  return 'serviceWorker' in navigator && 'SyncManager' in window;
 }
 
 function handleImagePreview(e) {
