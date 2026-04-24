@@ -1,3 +1,5 @@
+let _autoRefreshTimer = null;
+
 document.addEventListener('DOMContentLoaded', async () => {
   if ('serviceWorker' in navigator) {
     try {
@@ -10,11 +12,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   updateConnectionStatus();
   await updatePendingCount();
+  loadRecentUploads();
 
-  if (navigator.onLine) {
-    triggerSync();
-    loadRecentUploads();
-  }
+  if (navigator.onLine) triggerSync();
+
+  // Auto-refresh gallery every 8 s while tab is visible
+  _autoRefreshTimer = setInterval(() => {
+    if (navigator.onLine && document.visibilityState === 'visible') {
+      loadRecentUploads(true); // silent = no spinner
+    }
+  }, 8000);
 
   window.addEventListener('online', async () => {
     updateConnectionStatus();
@@ -27,6 +34,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateConnectionStatus();
     showToast('No connection — entries will be saved and synced later.', 'warning');
   });
+
+  // Close modal on Escape key
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModalDirect(); });
 
   document.getElementById('uploadForm').addEventListener('submit', handleSubmit);
   document.getElementById('imgInput').addEventListener('change', handleImagePreview);
@@ -58,7 +68,7 @@ async function handleSubmit(e) {
 
     if (navigator.onLine) {
       const ok = await tryDirectUpload(payload);
-      if (ok) { resetForm(); loadRecentUploads(); return; }
+      if (ok) { resetForm(); loadRecentUploads(false); return; }
     }
 
     // Queue for later (offline OR direct upload failed)
@@ -133,7 +143,7 @@ async function syncFromMainThread() {
     } catch { /* keep in queue */ }
   }
   await updatePendingCount();
-  loadRecentUploads();
+  loadRecentUploads(false);
 }
 
 function onSWMessage(e) {
@@ -148,33 +158,83 @@ function onSWMessage(e) {
 
 // ── RECENT UPLOADS ───────────────────────────────────────────
 
-async function loadRecentUploads() {
-  const section   = document.getElementById('uploadsSection');
-  const container = document.getElementById('recentUploads');
-  if (!navigator.onLine) return;
+async function loadRecentUploads(silent = false) {
+  const container  = document.getElementById('recentUploads');
+  const emptyState = document.getElementById('emptyState');
+  const countEl    = document.getElementById('uploadCount');
+  const lastEl     = document.getElementById('lastRefreshed');
+  const btn        = document.getElementById('refreshBtn');
+
+  if (!silent) btn.classList.add('spinning');
+
+  if (!navigator.onLine) {
+    if (!silent) {
+      container.innerHTML = '';
+      emptyState.style.display = 'flex';
+      emptyState.querySelector('span').textContent = 'No connection — showing cached data once back online';
+      countEl.textContent = '';
+    }
+    btn.classList.remove('spinning');
+    return;
+  }
 
   try {
     const res     = await fetch(`${DEZBA_API_URL}/api/uploads`);
     if (!res.ok) throw new Error();
     const uploads = await res.json();
 
-    if (!uploads.length) { section.style.display = 'none'; return; }
-    section.style.display = 'block';
+    countEl.textContent  = uploads.length ? `${uploads.length} record${uploads.length !== 1 ? 's' : ''}` : '';
+    lastEl.textContent   = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    container.innerHTML = uploads.map(u => `
-      <div class="upload-card">
-        ${u.img_type
-          ? `<img src="${DEZBA_API_URL}/api/upload/${u.id}/image" alt="${esc(u.name)}" class="upload-thumb" loading="lazy">`
-          : `<div class="no-thumb">No photo</div>`
-        }
-        <div class="upload-info">
-          <div class="upload-name">${esc(u.name)}</div>
-          ${u.description ? `<div class="upload-desc">${esc(u.description)}</div>` : ''}
-          <div class="upload-time">${fmtDate(u.created_at)}</div>
+    if (!uploads.length) {
+      container.innerHTML      = '';
+      emptyState.style.display = 'flex';
+      emptyState.querySelector('span').textContent = 'No entries yet — submit the form above to get started';
+    } else {
+      emptyState.style.display = 'none';
+      container.innerHTML = uploads.map(u => `
+        <div class="upload-card"
+          data-id="${u.id}"
+          data-name="${esc(u.name)}"
+          data-desc="${esc(u.description || '')}"
+          data-time="${u.created_at}"
+          data-img="${!!u.img_type}">
+          ${u.img_type
+            ? `<img src="${DEZBA_API_URL}/api/upload/${u.id}/image" alt="${esc(u.name)}" class="upload-thumb" loading="lazy">`
+            : `<div class="no-thumb">No photo</div>`
+          }
+          <div class="upload-info">
+            <div class="upload-name">${esc(u.name)}</div>
+            ${u.description ? `<div class="upload-desc">${esc(u.description)}</div>` : ''}
+            <div class="upload-time">${fmtDate(u.created_at)}</div>
+          </div>
         </div>
-      </div>
-    `).join('');
-  } catch { /* offline or backend unreachable */ }
+      `).join('');
+
+      // Attach click listeners after render (avoids inline handler quoting issues)
+      container.querySelectorAll('.upload-card').forEach(card => {
+        card.addEventListener('click', () => openModal(
+          +card.dataset.id,
+          card.dataset.name,
+          card.dataset.desc,
+          card.dataset.time,
+          card.dataset.img === 'true'
+        ));
+      });
+    }
+  } catch {
+    if (!silent) {
+      emptyState.style.display = 'flex';
+      emptyState.querySelector('span').textContent = 'Could not reach the server';
+      container.innerHTML = '';
+    }
+  } finally {
+    btn.classList.remove('spinning');
+  }
+}
+
+function refreshUploads() {
+  loadRecentUploads(false);
 }
 
 // ── UI HELPERS ───────────────────────────────────────────────
@@ -248,6 +308,43 @@ function showToast(msg, type = 'info') {
     setTimeout(() => el.remove(), 300);
   }, 4500);
 }
+
+// ── MODAL ────────────────────────────────────────────────────
+
+function openModal(id, name, description, createdAt, hasImg) {
+  const modal   = document.getElementById('modal');
+  const img     = document.getElementById('modalImg');
+  const nameEl  = document.getElementById('modalName');
+  const descEl  = document.getElementById('modalDesc');
+  const timeEl  = document.getElementById('modalTime');
+
+  nameEl.textContent = name;
+  descEl.textContent = description || '';
+  descEl.style.display = description ? 'block' : 'none';
+  timeEl.textContent = fmtDate(createdAt);
+
+  if (hasImg) {
+    img.src = `${DEZBA_API_URL}/api/upload/${id}/image`;
+    img.style.display = 'block';
+  } else {
+    img.style.display = 'none';
+  }
+
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal(e) {
+  // Only close when clicking the backdrop itself, not the box
+  if (e.target === document.getElementById('modal')) closeModalDirect();
+}
+
+function closeModalDirect() {
+  document.getElementById('modal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+// ── UTILS ────────────────────────────────────────────────────
 
 function esc(str) {
   const d = document.createElement('div');
